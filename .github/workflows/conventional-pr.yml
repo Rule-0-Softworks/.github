@@ -1,0 +1,125 @@
+name: Conventional PR
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "fix rewrites non-conventional titles; check only fails."
+        required: false
+        default: fix
+        type: string
+      default_scope:
+        description: "Optional scope to use when a branch does not provide one."
+        required: false
+        default: ""
+        type: string
+      require_scope:
+        description: "Fail when a conventional title cannot include a scope."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  conventional-pr:
+    name: Conventional PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Normalize and validate PR title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPOSITORY: ${{ github.repository }}
+          MODE: ${{ inputs.mode }}
+          DEFAULT_SCOPE: ${{ inputs.default_scope }}
+          REQUIRE_SCOPE: ${{ inputs.require_scope }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-zA-Z0-9._/-]+\))?!?: .+'
+
+          if [[ "$PR_TITLE" =~ $pattern ]]; then
+            echo "PR title is already conventional: $PR_TITLE"
+            exit 0
+          fi
+
+          if [[ "$MODE" != "fix" && "$MODE" != "check" ]]; then
+            echo "::error::Invalid mode '$MODE'. Use 'fix' or 'check'."
+            exit 1
+          fi
+
+          if [[ "$MODE" == "check" ]]; then
+            echo "::error::Use a Conventional Commit PR title, for example: feat(scope): short summary"
+            exit 1
+          fi
+
+          case "$PR_BRANCH" in
+            feature/*|feat/*) type="feat" ;;
+            bugfix/*|fix/*|hotfix/*) type="fix" ;;
+            docs/*) type="docs" ;;
+            chore/*) type="chore" ;;
+            refactor/*) type="refactor" ;;
+            test/*|tests/*) type="test" ;;
+            ci/*) type="ci" ;;
+            build/*) type="build" ;;
+            perf/*) type="perf" ;;
+            *)
+              echo "::error::Cannot infer a conventional type from branch '$PR_BRANCH'. Use feature/, bugfix/, hotfix/, docs/, chore/, refactor/, test/, ci/, build/, or perf/."
+              exit 1
+              ;;
+          esac
+
+          rest="${PR_BRANCH#*/}"
+          scope="${DEFAULT_SCOPE:-}"
+          branch_summary="$rest"
+
+          if [[ "$rest" == */* ]]; then
+            possible_scope="${rest%%/*}"
+            possible_summary="${rest#*/}"
+            if [[ ! "$possible_scope" =~ ^[A-Za-z]+-[0-9]+$ ]]; then
+              scope="${scope:-$possible_scope}"
+              branch_summary="$possible_summary"
+            fi
+          fi
+
+          summary="$PR_TITLE"
+          if [[ -z "$summary" || "$summary" == "$PR_BRANCH" || "$summary" == "$rest" || "$summary" == *"/"* || "$summary" =~ ^[A-Za-z]+-[0-9]+[-_/[:space:]] ]]; then
+            summary="$branch_summary"
+          fi
+
+          summary="$(printf '%s' "$summary" \
+            | sed -E 's#^[A-Za-z]+-[0-9]+[-_/[:space:]]*##; s#[-_/]+# #g; s#[[:space:]]+# #g; s#^[[:space:]]+##; s#[[:space:]]+$##')"
+
+          if [[ -z "$summary" ]]; then
+            summary="update project"
+          fi
+
+          first="${summary:0:1}"
+          rest_summary="${summary:1}"
+          first="$(printf '%s' "$first" | tr '[:upper:]' '[:lower:]')"
+          summary="${first}${rest_summary}"
+
+          if [[ "$REQUIRE_SCOPE" == "true" && -z "$scope" ]]; then
+            echo "::error::A PR title scope is required, but no scope was inferred from '$PR_BRANCH'."
+            exit 1
+          fi
+
+          if [[ -n "$scope" ]]; then
+            new_title="${type}(${scope}): ${summary}"
+          else
+            new_title="${type}: ${summary}"
+          fi
+
+          if [[ ! "$new_title" =~ $pattern ]]; then
+            echo "::error::Generated title is not conventional: $new_title"
+            exit 1
+          fi
+
+          echo "Updating PR title to: $new_title"
+          gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f "title=${new_title}" >/dev/null
