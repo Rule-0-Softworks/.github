@@ -59,7 +59,17 @@ jobs:
             exit 1
           fi
 
+          scope="${DEFAULT_SCOPE:-}"
+
           case "$PR_BRANCH" in
+            dependabot/npm_and_yarn/*)
+              type="chore"
+              scope="${scope:-deps}"
+              ;;
+            dependabot/github_actions/*)
+              type="ci"
+              scope="${scope:-deps}"
+              ;;
             feature/*|feat/*) type="feat" ;;
             bugfix/*|fix/*|hotfix/*) type="fix" ;;
             docs/*) type="docs" ;;
@@ -76,7 +86,7 @@ jobs:
           esac
 
           rest="${PR_BRANCH#*/}"
-          scope="${DEFAULT_SCOPE:-}"
+          scope="${scope:-${DEFAULT_SCOPE:-}}"
           branch_summary="$rest"
 
           if [[ "$rest" == */* ]]; then
