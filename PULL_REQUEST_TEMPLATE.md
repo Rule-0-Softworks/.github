@@ -25,6 +25,14 @@ chore(ci): short summary
 
 Low
 
+## Review request model
+
+<!-- Select exactly one tier. If this field is unavailable, explicitly choose one tier in the PR description. Do not infer a tier. -->
+
+- [ ] Opus 4.8 — default
+- [ ] Opus 5 — elevated review
+- [ ] Fable 5 — extremely security-sensitive review
+
 ## Tracking
 
 <!-- Link Linear issues, Beads, GitHub issues, or related PRs. -->
